@@ -5,7 +5,13 @@ export interface Produk {
   nama: string;
   kategori: Kategori;
   harga: number;
+}
+
+// Stok utama (mis. stok roti tawar). Semua menu memakai stok yang sama ini,
+// karena setiap menu pada dasarnya memakai 1 lembar/porsi roti tawar.
+export interface StokMaster {
   stok: number;
+  updated_at?: string;
 }
 
 export interface CartItem {
@@ -13,7 +19,6 @@ export interface CartItem {
   nama: string;
   harga: number;
   qty: number;
-  stok: number;
 }
 
 export interface TransaksiItem {
@@ -34,4 +39,11 @@ export interface Transaksi {
   kembalian: number;
   created_at: string;
   items?: TransaksiItem[];
+}
+
+// Rekap untuk catatan "selai apa yang keluar" pada Laporan.
+export interface RekapMenu {
+  nama: string;
+  qty: number;
+  total: number;
 }
