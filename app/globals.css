@@ -1,0 +1,14 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  background-color: #f2ead4;
+  color: #1c2340;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+}
