@@ -51,12 +51,30 @@ async function handleInit() {
     await sql`
       CREATE TABLE IF NOT EXISTS stok_log (
         id SERIAL PRIMARY KEY,
-        produk_id INTEGER NOT NULL REFERENCES produk(id) ON DELETE CASCADE,
+        produk_id INTEGER REFERENCES produk(id) ON DELETE CASCADE,
         jenis TEXT NOT NULL,
         jumlah INTEGER NOT NULL,
         keterangan TEXT,
         created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
       );
+    `;
+
+    // Kompatibilitas untuk database lama: kolom produk_id dulu NOT NULL,
+    // sekarang boleh NULL karena stok utama (global) tidak terikat 1 produk.
+    await sql`ALTER TABLE stok_log ALTER COLUMN produk_id DROP NOT NULL;`;
+
+    // Stok utama (mis. stok roti tawar). Semua menu memakai satu stok yang sama ini.
+    // Nilai default 20, tapi bisa diatur/di-setting kapan saja lewat halaman Stok.
+    await sql`
+      CREATE TABLE IF NOT EXISTS stok_master (
+        id INTEGER PRIMARY KEY DEFAULT 1,
+        stok INTEGER NOT NULL DEFAULT 20,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+    `;
+    await sql`
+      INSERT INTO stok_master (id, stok) VALUES (1, 20)
+      ON CONFLICT (id) DO NOTHING;
     `;
 
     const seed: [string, string, number][] = [
@@ -98,8 +116,8 @@ async function handleInit() {
 
     for (const [nama, kategori, harga] of seed) {
       await sql`
-        INSERT INTO produk (nama, kategori, harga, stok)
-        VALUES (${nama}, ${kategori}, ${harga}, 20)
+        INSERT INTO produk (nama, kategori, harga)
+        VALUES (${nama}, ${kategori}, ${harga})
         ON CONFLICT (nama) DO NOTHING;
       `;
     }
