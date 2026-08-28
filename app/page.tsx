@@ -6,8 +6,12 @@ import { formatRupiah } from '@/lib/format';
 
 const URUTAN_KATEGORI: Kategori[] = ['Campur', 'Istimewa', 'Kombinasi', 'Gurih', 'Lainnya'];
 
+// Pecahan uang untuk tombol cepat di form pembayaran (dalam Rupiah).
+const PECAHAN_UANG = [20000, 50000, 100000];
+
 export default function KasirPage() {
   const [produkList, setProdukList] = useState<Produk[]>([]);
+  const [stokRoti, setStokRoti] = useState<number>(0);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [metode, setMetode] = useState<'tunai' | 'qris'>('tunai');
   const [bayarInput, setBayarInput] = useState('');
@@ -22,8 +26,15 @@ export default function KasirPage() {
     if (json.ok) setProdukList(json.data);
   }
 
+  async function loadStok() {
+    const res = await fetch('/api/stok');
+    const json = await res.json();
+    if (json.ok) setStokRoti(json.data.stok);
+  }
+
   useEffect(() => {
     loadProduk();
+    loadStok();
   }, []);
 
   const totalCart = useMemo(
@@ -31,40 +42,40 @@ export default function KasirPage() {
     [cart]
   );
 
+  // Semua menu memakai 1 stok bersama (stok roti tawar), jadi qty di keranjang
+  // dijumlah lintas menu untuk dibandingkan dengan sisa stok roti.
+  const totalQtyDiCart = useMemo(() => cart.reduce((sum, it) => sum + it.qty, 0), [cart]);
+  const sisaStok = stokRoti - totalQtyDiCart;
+
   const bayar = metode === 'qris' ? totalCart : Number(bayarInput || 0);
   const kembalian = metode === 'qris' ? 0 : bayar - totalCart;
 
   function tambahKeCart(p: Produk) {
     setError('');
+    if (totalQtyDiCart + 1 > stokRoti) {
+      setError(`Stok roti tawar tidak cukup (sisa ${sisaStok}).`);
+      return;
+    }
     setCart((prev) => {
       const existing = prev.find((it) => it.produkId === p.id);
-      const qtyDiCart = existing ? existing.qty : 0;
-      if (qtyDiCart + 1 > p.stok) {
-        setError(`Stok "${p.nama}" tidak cukup (sisa ${p.stok}).`);
-        return prev;
-      }
       if (existing) {
         return prev.map((it) =>
           it.produkId === p.id ? { ...it, qty: it.qty + 1 } : it
         );
       }
-      return [...prev, { produkId: p.id, nama: p.nama, harga: p.harga, qty: 1, stok: p.stok }];
+      return [...prev, { produkId: p.id, nama: p.nama, harga: p.harga, qty: 1 }];
     });
   }
 
   function ubahQty(produkId: number, delta: number) {
     setError('');
+    if (delta > 0 && totalQtyDiCart + delta > stokRoti) {
+      setError(`Stok roti tawar tidak cukup (sisa ${sisaStok}).`);
+      return;
+    }
     setCart((prev) =>
       prev
-        .map((it) => {
-          if (it.produkId !== produkId) return it;
-          const newQty = it.qty + delta;
-          if (newQty > it.stok) {
-            setError(`Stok "${it.nama}" tidak cukup (sisa ${it.stok}).`);
-            return it;
-          }
-          return { ...it, qty: newQty };
-        })
+        .map((it) => (it.produkId === produkId ? { ...it, qty: it.qty + delta } : it))
         .filter((it) => it.qty > 0)
     );
   }
@@ -78,6 +89,20 @@ export default function KasirPage() {
     setBayarInput('');
     setMetode('tunai');
     setError('');
+  }
+
+  // Tombol cepat pecahan uang: menambahkan nominal ke "Uang Diterima"
+  // (untuk kasir yang menerima beberapa lembar uang sekaligus).
+  function tambahUangCepat(nominal: number) {
+    setBayarInput((prev) => String(Number(prev || 0) + nominal));
+  }
+
+  function uangPas() {
+    setBayarInput(String(totalCart));
+  }
+
+  function resetUang() {
+    setBayarInput('');
   }
 
   async function prosesBayar() {
@@ -116,6 +141,7 @@ export default function KasirPage() {
       setStruk(json.data);
       resetKasir();
       await loadProduk();
+      await loadStok();
     } catch (e: any) {
       setError(e.message);
     } finally {
@@ -141,6 +167,22 @@ export default function KasirPage() {
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Menu */}
       <div className="lg:col-span-2">
+        {/* Info stok bersama (roti tawar) */}
+        <div
+          className={`flex items-center justify-between rounded-xl px-4 py-2.5 mb-4 text-sm font-semibold no-print ${
+            sisaStok <= 0
+              ? 'bg-red-100 text-red-700 border border-red-200'
+              : sisaStok <= 5
+              ? 'bg-amber-100 text-amber-800 border border-amber-200'
+              : 'bg-navy/5 text-navy border border-navy/10'
+          }`}
+        >
+          <span>Stok Roti Tawar</span>
+          <span>
+            {sisaStok} <span className="font-normal text-xs">tersisa (dari {stokRoti})</span>
+          </span>
+        </div>
+
         <div className="flex gap-2 flex-wrap mb-4 no-print">
           {kategoriTersedia.map((k) => (
             <button
@@ -167,12 +209,11 @@ export default function KasirPage() {
                 <button
                   key={p.id}
                   onClick={() => tambahKeCart(p)}
-                  disabled={p.stok <= 0}
+                  disabled={sisaStok <= 0}
                   className="bg-white rounded-xl shadow p-3 text-left hover:shadow-md transition disabled:opacity-40 disabled:cursor-not-allowed border border-navy/10"
                 >
                   <p className="font-semibold text-sm leading-tight">{p.nama}</p>
                   <p className="text-gold font-bold mt-1">{formatRupiah(p.harga)}</p>
-                  <p className="text-xs text-navy/60 mt-1">Stok: {p.stok}</p>
                 </button>
               ))}
             </div>
@@ -263,6 +304,35 @@ export default function KasirPage() {
               placeholder="0"
               className="w-full mt-1 border border-navy/20 rounded-lg px-3 py-2"
             />
+
+            {/* Tombol cepat pecahan uang */}
+            <div className="flex flex-wrap gap-2 mt-2">
+              {PECAHAN_UANG.map((n) => (
+                <button
+                  key={n}
+                  type="button"
+                  onClick={() => tambahUangCepat(n)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold bg-navy/5 border border-navy/15 text-navy hover:bg-navy/10"
+                >
+                  +{formatRupiah(n)}
+                </button>
+              ))}
+              <button
+                type="button"
+                onClick={uangPas}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-gold/20 border border-gold text-navy hover:bg-gold/30"
+              >
+                Uang Pas
+              </button>
+              <button
+                type="button"
+                onClick={resetUang}
+                className="px-3 py-1.5 rounded-lg text-xs font-bold bg-white border border-navy/15 text-navy/60 hover:bg-navy/5"
+              >
+                Reset
+              </button>
+            </div>
+
             <div className="flex justify-between mt-2 text-sm">
               <span>Kembalian</span>
               <span className="font-bold">
