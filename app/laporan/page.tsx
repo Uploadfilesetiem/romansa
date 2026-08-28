@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Transaksi } from '@/lib/types';
+import { Transaksi, RekapMenu } from '@/lib/types';
 import { formatRupiah, formatTanggal } from '@/lib/format';
 
 function todayStr() {
@@ -37,6 +37,26 @@ export default function LaporanPage() {
     [data]
   );
   const grandTotal = totalTunai + totalQris;
+
+  // Catatan: rekap selai/menu apa saja yang keluar & berapa banyak, pada periode ini.
+  const rekapMenu: RekapMenu[] = useMemo(() => {
+    const map = new Map<string, { qty: number; total: number }>();
+    data.forEach((t) => {
+      (t.items || []).forEach((it) => {
+        const cur = map.get(it.nama_produk) || { qty: 0, total: 0 };
+        cur.qty += it.qty;
+        cur.total += it.subtotal;
+        map.set(it.nama_produk, cur);
+      });
+    });
+    return Array.from(map.entries())
+      .map(([nama, v]) => ({ nama, qty: v.qty, total: v.total }))
+      .sort((a, b) => b.qty - a.qty);
+  }, [data]);
+  const totalQtyTerjual = useMemo(
+    () => rekapMenu.reduce((s, r) => s + r.qty, 0),
+    [rekapMenu]
+  );
 
   async function batalkanTransaksi(id: number) {
     if (!confirm('Batalkan transaksi ini? Stok akan dikembalikan.')) return;
@@ -91,6 +111,23 @@ export default function LaporanPage() {
       styles: { fontSize: 10, fontStyle: 'bold' },
     });
 
+    const finalY2 = (doc as any).lastAutoTable.finalY || finalY + 30;
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Catatan Selai/Menu Keluar', 14, finalY2 + 10);
+
+    autoTable(doc, {
+      startY: finalY2 + 14,
+      head: [['Menu / Selai', 'Qty Terjual', 'Omzet']],
+      body: rekapMenu.map((r) => [r.nama, String(r.qty), formatRupiah(r.total)]),
+      foot: [['Total', String(totalQtyTerjual), formatRupiah(grandTotal)]],
+      styles: { fontSize: 8, cellPadding: 2 },
+      headStyles: { fillColor: [28, 35, 64] },
+      footStyles: { fillColor: [230, 230, 230], textColor: [28, 35, 64], fontStyle: 'bold' },
+      columnStyles: { 1: { halign: 'right' }, 2: { halign: 'right' } },
+    });
+
     doc.save(`Laporan-RotiBakarRomansa-${start}_${end}.pdf`);
   }
 
@@ -137,6 +174,50 @@ export default function LaporanPage() {
         <SummaryCard label="Total QRIS" value={formatRupiah(totalQris)} />
         <SummaryCard label="Grand Total" value={formatRupiah(grandTotal)} highlight />
         <SummaryCard label="Jumlah Transaksi" value={String(data.length)} />
+      </div>
+
+      {/* Catatan: rekap selai/menu apa yang keluar pada periode ini */}
+      <div className="bg-white rounded-xl shadow overflow-x-auto mb-4">
+        <div className="px-3 py-2 border-b border-navy/10">
+          <h2 className="font-bold text-navy text-sm">Catatan Selai/Menu Keluar</h2>
+          <p className="text-xs text-navy/50">
+            Rekap jumlah tiap menu (selai) yang terjual pada periode ini, dari yang paling laris.
+          </p>
+        </div>
+        <table className="w-full text-sm">
+          <thead className="bg-navy/5 text-navy">
+            <tr>
+              <th className="text-left px-3 py-2">Menu / Selai</th>
+              <th className="text-right px-3 py-2">Qty Terjual</th>
+              <th className="text-right px-3 py-2">Omzet</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rekapMenu.length === 0 && (
+              <tr>
+                <td colSpan={3} className="text-center py-4 text-navy/50">
+                  Belum ada menu yang terjual pada periode ini.
+                </td>
+              </tr>
+            )}
+            {rekapMenu.map((r) => (
+              <tr key={r.nama} className="border-b border-navy/10">
+                <td className="px-3 py-2">{r.nama}</td>
+                <td className="px-3 py-2 text-right font-semibold">{r.qty}</td>
+                <td className="px-3 py-2 text-right">{formatRupiah(r.total)}</td>
+              </tr>
+            ))}
+          </tbody>
+          {rekapMenu.length > 0 && (
+            <tfoot>
+              <tr className="bg-navy/5 font-bold">
+                <td className="px-3 py-2">Total</td>
+                <td className="px-3 py-2 text-right">{totalQtyTerjual}</td>
+                <td className="px-3 py-2 text-right">{formatRupiah(grandTotal)}</td>
+              </tr>
+            </tfoot>
+          )}
+        </table>
       </div>
 
       <div className="bg-white rounded-xl shadow overflow-x-auto">
