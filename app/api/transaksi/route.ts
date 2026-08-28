@@ -62,6 +62,11 @@ export async function GET(req: Request) {
 
 // POST /api/transaksi
 // body: { items: [{produkId, nama, harga, qty}], metode: 'tunai'|'qris', bayar: number }
+//
+// Catatan stok: semua menu memakai satu stok bersama (stok roti tawar) di
+// tabel stok_master, karena setiap menu pada dasarnya memakai 1 roti tawar.
+// Setiap item yang terjual tetap dicatat di stok_log per menu, supaya ada
+// catatan/riwayat selai (menu) apa saja yang keluar.
 export async function POST(req: Request) {
   const body = await req.json();
   const { items, metode, bayar } = body;
@@ -74,6 +79,7 @@ export async function POST(req: Request) {
   }
 
   const total = items.reduce((sum: number, it: any) => sum + it.harga * it.qty, 0);
+  const totalQty = items.reduce((sum: number, it: any) => sum + it.qty, 0);
   const bayarFinal = metode === 'qris' ? total : Number(bayar);
   const kembalian = metode === 'qris' ? 0 : bayarFinal - total;
 
@@ -85,17 +91,15 @@ export async function POST(req: Request) {
   try {
     await client.query('BEGIN');
 
-    // Pastikan stok cukup
-    for (const it of items) {
-      const { rows } = await client.query('SELECT stok FROM produk WHERE id = $1 FOR UPDATE', [
-        it.produkId,
-      ]);
-      if (rows.length === 0) {
-        throw new Error(`Produk "${it.nama}" tidak ditemukan.`);
-      }
-      if (rows[0].stok < it.qty) {
-        throw new Error(`Stok "${it.nama}" tidak cukup (sisa ${rows[0].stok}).`);
-      }
+    // Pastikan stok roti (bersama) cukup untuk seluruh keranjang.
+    const { rows: stokRows } = await client.query(
+      'SELECT stok FROM stok_master WHERE id = 1 FOR UPDATE'
+    );
+    if (stokRows.length === 0) {
+      throw new Error('Stok belum diatur. Buka /api/init terlebih dahulu.');
+    }
+    if (stokRows[0].stok < totalQty) {
+      throw new Error(`Stok roti tidak cukup (sisa ${stokRows[0].stok}).`);
     }
 
     const kode = generateKodeTransaksi();
@@ -113,12 +117,18 @@ export async function POST(req: Request) {
          VALUES ($1, $2, $3, $4, $5, $6)`,
         [transaksiId, it.produkId, it.nama, it.harga, it.qty, subtotal]
       );
-      await client.query(`UPDATE produk SET stok = stok - $1 WHERE id = $2`, [it.qty, it.produkId]);
+      // Catatan per menu (selai) yang keluar, walau stoknya bersama.
       await client.query(
         `INSERT INTO stok_log (produk_id, jenis, jumlah, keterangan) VALUES ($1, 'penjualan', $2, $3)`,
         [it.produkId, it.qty, `Transaksi ${kode}`]
       );
     }
+
+    // Potong stok bersama sebanyak total qty yang terjual (lintas menu).
+    await client.query(
+      'UPDATE stok_master SET stok = stok - $1, updated_at = NOW() WHERE id = 1',
+      [totalQty]
+    );
 
     await client.query('COMMIT');
 
