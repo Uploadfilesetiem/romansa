@@ -6,7 +6,9 @@ import { formatRupiah } from '@/lib/format';
 
 export default function StokPage() {
   const [produkList, setProdukList] = useState<Produk[]>([]);
-  const [modalTambahStok, setModalTambahStok] = useState<Produk | null>(null);
+  const [stokRoti, setStokRoti] = useState<number>(0);
+  const [modalAturStok, setModalAturStok] = useState(false);
+  const [modalTambahStok, setModalTambahStok] = useState(false);
   const [modalEdit, setModalEdit] = useState<Produk | null>(null);
   const [showTambahProduk, setShowTambahProduk] = useState(false);
   const [msg, setMsg] = useState('');
@@ -17,21 +19,65 @@ export default function StokPage() {
     if (json.ok) setProdukList(json.data);
   }
 
+  async function loadStok() {
+    const res = await fetch('/api/stok');
+    const json = await res.json();
+    if (json.ok) setStokRoti(json.data.stok);
+  }
+
   useEffect(() => {
     load();
+    loadStok();
   }, []);
 
   async function hapusProduk(id: number) {
-    if (!confirm('Hapus produk ini? Riwayat laporan lama tidak akan terhapus.')) return;
+    if (!confirm('Hapus menu ini? Riwayat laporan lama tidak akan terhapus.')) return;
     await fetch(`/api/produk/${id}`, { method: 'DELETE' });
-    setMsg('Produk dihapus.');
+    setMsg('Menu dihapus.');
     load();
   }
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="font-bold text-xl text-navy">Stok Produk</h1>
+      <h1 className="font-bold text-xl text-navy mb-4">Stok & Menu</h1>
+
+      {msg && <p className="text-green-600 text-sm mb-2">{msg}</p>}
+
+      {/* Stok bersama: dipakai oleh SEMUA menu, karena semua menu memakai roti tawar. */}
+      <div className="bg-white rounded-xl shadow p-4 mb-6">
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <p className="font-bold text-navy">Stok Roti Tawar (Stok Bersama)</p>
+            <p className="text-xs text-navy/60 mt-0.5">
+              Semua menu ikut mengurangi stok ini, karena setiap menu memakai 1 roti tawar.
+            </p>
+            <p
+              className={`text-2xl font-extrabold mt-2 ${
+                stokRoti <= 5 ? 'text-red-500' : 'text-navy'
+              }`}
+            >
+              {stokRoti} <span className="text-sm font-normal text-navy/50">lembar/porsi</span>
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setModalTambahStok(true)}
+              className="text-sm bg-gold px-3 py-2 rounded-lg font-semibold"
+            >
+              + Tambah Stok
+            </button>
+            <button
+              onClick={() => setModalAturStok(true)}
+              className="text-sm bg-navy/10 px-3 py-2 rounded-lg font-semibold text-navy"
+            >
+              Atur / Setting
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between mb-3">
+        <h2 className="font-bold text-navy">Daftar Menu</h2>
         <button
           onClick={() => setShowTambahProduk(true)}
           className="bg-navy text-cream px-4 py-2 rounded-lg text-sm font-semibold"
@@ -40,8 +86,6 @@ export default function StokPage() {
         </button>
       </div>
 
-      {msg && <p className="text-green-600 text-sm mb-2">{msg}</p>}
-
       <div className="bg-white rounded-xl shadow overflow-x-auto">
         <table className="w-full text-sm">
           <thead className="bg-navy text-cream">
@@ -49,7 +93,6 @@ export default function StokPage() {
               <th className="text-left px-3 py-2">Nama</th>
               <th className="text-left px-3 py-2">Kategori</th>
               <th className="text-right px-3 py-2">Harga</th>
-              <th className="text-right px-3 py-2">Stok</th>
               <th className="text-center px-3 py-2">Aksi</th>
             </tr>
           </thead>
@@ -59,21 +102,8 @@ export default function StokPage() {
                 <td className="px-3 py-2">{p.nama}</td>
                 <td className="px-3 py-2">{p.kategori}</td>
                 <td className="px-3 py-2 text-right">{formatRupiah(p.harga)}</td>
-                <td
-                  className={`px-3 py-2 text-right font-semibold ${
-                    p.stok <= 3 ? 'text-red-500' : ''
-                  }`}
-                >
-                  {p.stok}
-                </td>
                 <td className="px-3 py-2">
                   <div className="flex justify-center gap-2 flex-wrap">
-                    <button
-                      onClick={() => setModalTambahStok(p)}
-                      className="text-xs bg-gold px-2 py-1 rounded font-semibold"
-                    >
-                      + Stok
-                    </button>
                     <button
                       onClick={() => setModalEdit(p)}
                       className="text-xs bg-navy/10 px-2 py-1 rounded font-semibold"
@@ -95,13 +125,25 @@ export default function StokPage() {
       </div>
 
       {modalTambahStok && (
-        <TambahStokModal
-          produk={modalTambahStok}
-          onClose={() => setModalTambahStok(null)}
+        <TambahStokMasterModal
+          stokSaatIni={stokRoti}
+          onClose={() => setModalTambahStok(false)}
           onSukses={() => {
-            setModalTambahStok(null);
-            setMsg('Stok berhasil ditambahkan.');
-            load();
+            setModalTambahStok(false);
+            setMsg('Stok roti tawar berhasil ditambahkan.');
+            loadStok();
+          }}
+        />
+      )}
+
+      {modalAturStok && (
+        <AturStokMasterModal
+          stokSaatIni={stokRoti}
+          onClose={() => setModalAturStok(false)}
+          onSukses={() => {
+            setModalAturStok(false);
+            setMsg('Stok roti tawar berhasil diperbarui.');
+            loadStok();
           }}
         />
       )}
@@ -112,7 +154,7 @@ export default function StokPage() {
           onClose={() => setModalEdit(null)}
           onSukses={() => {
             setModalEdit(null);
-            setMsg('Produk berhasil diperbarui.');
+            setMsg('Menu berhasil diperbarui.');
             load();
           }}
         />
@@ -132,17 +174,17 @@ export default function StokPage() {
   );
 }
 
-function TambahStokModal({
-  produk,
+function TambahStokMasterModal({
+  stokSaatIni,
   onClose,
   onSukses,
 }: {
-  produk: Produk;
+  stokSaatIni: number;
   onClose: () => void;
   onSukses: () => void;
 }) {
   const [jumlah, setJumlah] = useState('');
-  const [keterangan, setKeterangan] = useState('Pembelian stok');
+  const [keterangan, setKeterangan] = useState('Pembelian roti tawar');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -152,10 +194,10 @@ function TambahStokModal({
       return;
     }
     setLoading(true);
-    const res = await fetch(`/api/produk/${produk.id}`, {
+    const res = await fetch('/api/stok', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ aksi: 'tambah_stok', jumlah: Number(jumlah), keterangan }),
+      body: JSON.stringify({ aksi: 'tambah', jumlah: Number(jumlah), keterangan }),
     });
     const json = await res.json();
     setLoading(false);
@@ -167,8 +209,8 @@ function TambahStokModal({
   }
 
   return (
-    <Modal onClose={onClose} title={`Tambah Stok: ${produk.nama}`}>
-      <p className="text-sm text-navy/60 mb-2">Stok saat ini: {produk.stok}</p>
+    <Modal onClose={onClose} title="Tambah Stok Roti Tawar">
+      <p className="text-sm text-navy/60 mb-2">Stok saat ini: {stokSaatIni}</p>
       <label className="text-sm font-semibold">Jumlah Tambahan</label>
       <input
         type="number"
@@ -176,11 +218,69 @@ function TambahStokModal({
         onChange={(e) => setJumlah(e.target.value)}
         className="w-full border border-navy/20 rounded-lg px-3 py-2 mt-1 mb-3"
       />
-      <label className="text-sm font-semibold">Keterangan (misal: pembelian bahan)</label>
+      <label className="text-sm font-semibold">Keterangan</label>
       <input
         type="text"
         value={keterangan}
         onChange={(e) => setKeterangan(e.target.value)}
+        className="w-full border border-navy/20 rounded-lg px-3 py-2 mt-1"
+      />
+      {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
+      <button
+        onClick={submit}
+        disabled={loading}
+        className="w-full mt-4 bg-navy text-cream font-bold py-2 rounded-lg"
+      >
+        {loading ? 'Menyimpan...' : 'Simpan'}
+      </button>
+    </Modal>
+  );
+}
+
+function AturStokMasterModal({
+  stokSaatIni,
+  onClose,
+  onSukses,
+}: {
+  stokSaatIni: number;
+  onClose: () => void;
+  onSukses: () => void;
+}) {
+  const [stok, setStok] = useState(String(stokSaatIni));
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function submit() {
+    if (stok === '' || Number(stok) < 0) {
+      setError('Isi jumlah stok yang benar.');
+      return;
+    }
+    setLoading(true);
+    const res = await fetch('/api/stok', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ aksi: 'set', stok: Number(stok) }),
+    });
+    const json = await res.json();
+    setLoading(false);
+    if (!json.ok) {
+      setError(json.error);
+      return;
+    }
+    onSukses();
+  }
+
+  return (
+    <Modal onClose={onClose} title="Atur / Setting Stok Roti Tawar">
+      <p className="text-sm text-navy/60 mb-2">
+        Gunakan ini untuk mengatur ulang nilai stok, misalnya saat mulai buka toko
+        (contoh: 20 lembar), atau setelah stock opname.
+      </p>
+      <label className="text-sm font-semibold">Jumlah Stok</label>
+      <input
+        type="number"
+        value={stok}
+        onChange={(e) => setStok(e.target.value)}
         className="w-full border border-navy/20 rounded-lg px-3 py-2 mt-1"
       />
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
@@ -207,7 +307,6 @@ function EditProdukModal({
   const [nama, setNama] = useState(produk.nama);
   const [kategori, setKategori] = useState(produk.kategori);
   const [harga, setHarga] = useState(String(produk.harga));
-  const [stok, setStok] = useState(String(produk.stok));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -221,7 +320,6 @@ function EditProdukModal({
         nama,
         kategori,
         harga: Number(harga),
-        stok: Number(stok),
       }),
     });
     const json = await res.json();
@@ -234,7 +332,7 @@ function EditProdukModal({
   }
 
   return (
-    <Modal onClose={onClose} title="Edit Produk">
+    <Modal onClose={onClose} title="Edit Menu">
       <FormProduk
         nama={nama}
         setNama={setNama}
@@ -242,8 +340,6 @@ function EditProdukModal({
         setKategori={setKategori}
         harga={harga}
         setHarga={setHarga}
-        stok={stok}
-        setStok={setStok}
       />
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
       <button
@@ -261,7 +357,6 @@ function TambahProdukModal({ onClose, onSukses }: { onClose: () => void; onSukse
   const [nama, setNama] = useState('');
   const [kategori, setKategori] = useState('Campur');
   const [harga, setHarga] = useState('');
-  const [stok, setStok] = useState('20');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -274,7 +369,7 @@ function TambahProdukModal({ onClose, onSukses }: { onClose: () => void; onSukse
     const res = await fetch('/api/produk', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ nama, kategori, harga: Number(harga), stok: Number(stok) }),
+      body: JSON.stringify({ nama, kategori, harga: Number(harga) }),
     });
     const json = await res.json();
     setLoading(false);
@@ -294,9 +389,10 @@ function TambahProdukModal({ onClose, onSukses }: { onClose: () => void; onSukse
         setKategori={setKategori}
         harga={harga}
         setHarga={setHarga}
-        stok={stok}
-        setStok={setStok}
       />
+      <p className="text-xs text-navy/50 mt-2">
+        Menu baru otomatis memakai stok bersama (Stok Roti Tawar) di atas.
+      </p>
       {error && <p className="text-red-500 text-sm mt-2">{error}</p>}
       <button
         onClick={submit}
@@ -309,7 +405,7 @@ function TambahProdukModal({ onClose, onSukses }: { onClose: () => void; onSukse
   );
 }
 
-function FormProduk({ nama, setNama, kategori, setKategori, harga, setHarga, stok, setStok }: any) {
+function FormProduk({ nama, setNama, kategori, setKategori, harga, setHarga }: any) {
   return (
     <div className="space-y-2">
       <div>
@@ -340,15 +436,6 @@ function FormProduk({ nama, setNama, kategori, setKategori, harga, setHarga, sto
           type="number"
           value={harga}
           onChange={(e) => setHarga(e.target.value)}
-          className="w-full border border-navy/20 rounded-lg px-3 py-2 mt-1"
-        />
-      </div>
-      <div>
-        <label className="text-sm font-semibold">Stok</label>
-        <input
-          type="number"
-          value={stok}
-          onChange={(e) => setStok(e.target.value)}
           className="w-full border border-navy/20 rounded-lg px-3 py-2 mt-1"
         />
       </div>
